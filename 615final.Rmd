@@ -1,0 +1,261 @@
+---
+title: "615 Final Project"
+subtitle: "Video Game Sales"
+author: "Xinyi Wang"
+date: "12/9/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Read and Clean Data
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(tidyr)
+setwd("/Users/CindyWang/Desktop/615/final_project")
+rawdata <- read.csv("video_game_sales.csv")
+mydata <- rawdata
+
+#Remove observations without "Name"
+mydata$Name <- as.character(mydata$Name)
+mydata <- filter(mydata, Name!="")
+
+#Remove game released after 2017 and NA
+mydata$Year_of_Release <- as.numeric(as.character(mydata$Year_of_Release))
+mydata <- filter(mydata,Year_of_Release<2017)
+```
+
+
+#EDA
+
+##1.Games Released Each Year by All Publishers(1980-2016)
+```{r,echo=FALSE}
+mydata  %>%
+  group_by(Year_of_Release)  %>%
+  summarise(num_of_games = n_distinct(Name))  -> games_by_year
+
+ggplot(games_by_year) +
+  geom_point(mapping = aes(x=Year_of_Release, y=num_of_games),stat = 'identity') +
+  geom_line(mapping = aes(x=Year_of_Release, y=num_of_games),stat = 'identity') + 
+  labs(x = "Year", y = "Number of Games")
+```
+
+##2.top 10 publishers with higher revenue from 1980-2016
+```{r,echo=FALSE}
+sales_per_publisher <- mydata %>%
+  group_by(Publisher) %>%
+  summarise(ttl_sales = sum(Global_Sales)) %>%
+  arrange(desc(ttl_sales))
+top10<- sales_per_publisher[1:10,]
+
+ggplot(top10) + 
+  geom_bar(aes(x = reorder(Publisher,ttl_sales),y = ttl_sales, fill = Publisher),stat = "identity")  +
+  labs(x = "Publishers", y = "Total Global Sales(millions)") + 
+  theme(legend.position="none") +
+  coord_flip() 
+```
+
+##3.Sales per region in timeline
+```{r,warning=FALSE,message=FALSE,echo=FALSE}
+aggr_coun <- mydata%>% 
+  select(Year_of_Release, Genre, NA_Sales:Global_Sales) %>% 
+  group_by(Year_of_Release, Genre) %>%
+  summarise_each(funs(sum), NA_Sales:Global_Sales)
+
+aggr_tab <- rbind(aggr_coun %>% mutate (Region = "JP", Sales = JP_Sales), 
+                  aggr_coun %>% mutate (Region = "NA", Sales = NA_Sales), 
+                  aggr_coun %>% mutate (Region = "EU", Sales = EU_Sales), 
+                  aggr_coun %>% mutate (Region = "Other", Sales = Other_Sales) )
+
+aggr_year <- aggr_tab %>% 
+  select(Year_of_Release, Region, Sales) %>% 
+  group_by(Year_of_Release, Region) %>% 
+  summarise_each(funs(sum), Sales)
+
+ggplot(data=aggr_year)+ 
+  geom_line(aes(x=Year_of_Release,y=Sales,color=Region))+
+  labs(y = "Sales", x = "Year of release")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  
+```
+
+
+##4.global sales map by platform and year
+```{r,echo=FALSE}
+byPlatform <- mydata[,c("Year_of_Release","Platform","NA_Sales","EU_Sales","JP_Sales","Other_Sales")]
+platform_count <- byPlatform %>%
+  group_by(Year_of_Release,Platform) %>%
+  summarise(NA_Sales=sum(NA_Sales),EU_Sales=sum(EU_Sales),JP_Sales=sum(JP_Sales),Other_Sales=sum(Other_Sales))
+new <- gather(platform_count,area,sales,NA_Sales,EU_Sales,JP_Sales,Other_Sales)
+new$Platform <- as.character(new$Platform)
+
+##Take Platform="3DS" and Year_of_Release="2016" as example
+ex_map_data <- new %>% 
+  filter(Year_of_Release==2016,Platform=="3DS")
+
+library(tmap)
+data(World)
+wm <- map_data("world")
+cc <- raster::ccodes()
+mappings <- c("North America"="NA_Sales", "Europe"="EU_Sales") # you add the others here
+cc$MYCONTINENTS <- mappings[cc$continent]
+cc$MYCONTINENTS <- ifelse(cc$NAME=="Japan","JP_Sales",cc$MYCONTINENTS)
+cc$MYCONTINENTS <- ifelse(is.na(cc$MYCONTINENTS),"Other_Sales",cc$MYCONTINENTS)
+cc <- left_join(cc, ex_map_data, by = c("MYCONTINENTS"="area"))
+
+## 31 country names need to be mapped... 
+wm$region %>% 
+  unique %>% 
+  setdiff(cc$NAME)
+# ...                        
+# [7] "Canary Islands"  "UK"  "Heard Island"     
+# ...
+## For example, UK is called United Kingdom in cc:
+unique(grep("Kingdom", cc$NAME, value=T, ignore.case=T))
+# [1] "United Kingdom"
+mappings <- c("UK"="United Kingdom", "USA"="United States") # You add the others here
+cc$NAME[match(mappings, cc$NAME)] <- names(mappings)
+
+wm <- left_join(wm, cc[,c("NAME","MYCONTINENTS", "sales")], by=c("region"="NAME"))
+p <- ggplot() +
+  geom_polygon(aes(x=long, y=lat, group=group, fill=sales), wm, colour = NA) +
+  coord_quickmap() +
+  scale_fill_gradient(low="light blue", high="red") +
+  theme_void()
+library(plotly)
+ggplotly(p)
+
+
+# ## Download data from Natural Earth
+# url <- "https://www.naturalearthdata.com/http//www.naturalearthdata.com/download/50m/cultural/ne_50m_admin_0_countries.zip"
+# 
+# tmp <- tempdir()
+# 
+# file <- basename(url)
+# 
+# download.file(url, file)
+# 
+# unzip(file, exdir = tmp)
+# 
+# library(rgdal)
+# ## Read the data into R
+# countries <- readOGR(dsn=tmp,
+#                      layer = "ne_50m_admin_0_countries", 
+#                      encoding = "UTF-8")
+# 
+# 
+# t_2017<-sp::merge(countries,cc,
+#                   by.y="ISO3",by.x="ISO_A3",sort=FALSE,duplicateGeoms =
+#                   TRUE,all.x=FALSE)
+# 
+# factpal <- colorFactor(topo.colors(4), t_2017$sales)
+# 
+# 
+# library(leaflet)
+# leaflet() %>%
+#   addTiles() %>%
+#   addPolygons(stroke = FALSE,data=t_2017,
+#   fillColor = ~factpal(t_2017$sales),
+#   smoothFactor = 0.2,
+#   weight = 2,
+#   opacity = 1,
+#   color = "white",
+#   dashArray = "3",
+#   fillOpacity = 0.5) 
+```
+
+##5.game name text analysis (word cloud)
+```{r,echo=FALSE}
+##Take Year_of_Release="2016" as example
+library(tidytext)
+library(dplyr)
+text <- mydata %>%
+  filter(Year_of_Release == 2016) %>%
+  select(Name) %>%
+  unnest_tokens(word, Name)
+
+data(stop_words)
+tidy_text <- text %>%
+  anti_join(stop_words)
+
+# library(tm)
+# mycorpus <- Corpus(VectorSource(tidy_text))
+# mycorpus <- tm_map(mycorpus, removeNumbers)  
+# 
+# df <- data.frame(text = get("content", mycorpus))
+
+library(wordcloud)
+tidy_text%>%
+  count(word) %>%
+  with(wordcloud(word, n, min.freq = 1,max.words = 100,colors=brewer.pal(8, "Dark2")))
+
+```
+
+##6.Sales by Genre
+```{r,echo=FALSE}
+##Take Genre="Action" as an example
+mydata$Genre <- as.character(mydata$Genre)
+games_y1<-mydata %>%
+  filter(Genre == "Action") %>%
+  select(Year_of_Release,EU_Sales,JP_Sales,NA_Sales,Other_Sales)
+
+games_long<-gather(games_y1,Region,TotalSales,EU_Sales:Other_Sales)
+
+q <- ggplot(games_long,aes(x=Year_of_Release,y=TotalSales,fill=Region))+
+  geom_bar(stat="identity")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggplotly(q)
+```
+
+##7.Pie chart of genres in certain year and platform
+```{r,echo=FALSE}
+##Take Platform="3DS" and Year_of_Release="2016" as example
+genre_count <- mydata %>%
+  select(Year_of_Release,Platform,Genre) %>%
+  filter(Year_of_Release==2016 & Platform=="3DS") %>%
+  group_by(Genre) %>%
+  summarise(count=n())
+
+genre_pie <- plot_ly(genre_count, labels = ~Genre, values = ~count, type = 'pie',textposition = 'inside',textinfo = 'percent+label')
+
+ggplotly(genre_pie)
+```
+
+#Benford Law
+```{r}
+library(benford.analysis)
+bfd <- benford(mydata$Global_Sales)
+plot(bfd)
+
+
+library(BenfordTests)
+# Euclidean Distance Test for Benford’s Law
+edist.benftest(mydata$Global_Sales)
+# The p-value is smaller than 0.05 so that we reject the null hypothesis. Therefore, the goodness-of-fit test based on the Euclidean distance between the first digits' distribution and Benford's distribution shows the data does not conform to Benford's law very well.
+
+```
+
+#Top 10 Games
+```{r}
+#Take 2016 as example
+toptable <- mydata %>%
+  select(Name,Global_Sales,Year_of_Release,Platform) %>%
+  filter(Year_of_Release==2016) %>%
+  arrange(desc(Global_Sales)) %>%
+  distinct(Name,Global_Sales) %>%
+  head(10)
+
+```
+
+
+
+
+
+
+
+
+
