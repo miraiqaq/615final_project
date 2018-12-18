@@ -16,6 +16,8 @@ if (!require(tmap)) install.packages('tmap')
 library(tmap)
 if (!require(maps)) install.packages('maps')
 library(maps)
+if (!require(tm)) install.packages('tm')
+library(tm)
 rawdata <- read.csv("video_game_sales.csv")
 mydata <- rawdata
 
@@ -93,7 +95,7 @@ ui <- dashboardPage(
                       box(width = NULL,height = 550,
                           selectInput("selectyear2",label="Select Year:",choices=year_list),
                           sliderInput("freq","Minimum Frequency:",min = 1,  max = 10, value = 5),
-                          sliderInput("max","Maximum Number of Words:",min = 1,  max = 300, value = 150))),
+                          sliderInput("max","Maximum Number of Words:",min = 1,  max = 300, value = 100))),
                column(width = 6,
                       box(width = NULL,title="Word Cloud",solidHeader = TRUE,
                           plotOutput("word",height = 500)))
@@ -139,12 +141,12 @@ server <- function(input, output,session) {
     cc$MYCONTINENTS <- ifelse(cc$NAME=="Japan","JP_Sales",cc$MYCONTINENTS)
     cc$MYCONTINENTS <- ifelse(is.na(cc$MYCONTINENTS),"Other_Sales",cc$MYCONTINENTS)
     cc <- left_join(cc, ex_map_data, by = c("MYCONTINENTS"="area"))
-    wm$region %>% 
-      unique %>% 
-      setdiff(cc$NAME)
+    # wm$region %>% 
+    #   unique %>% 
+    #   setdiff(cc$NAME)
     ## UK is called United Kingdom in cc:
-    unique(grep("Kingdom", cc$NAME, value=T, ignore.case=T))
-    mappings <- c("UK"="United Kingdom", "USA"="United States")
+    # unique(grep("Kingdom", cc$NAME, value=T, ignore.case=T))
+    mappings <- c("UK"="United Kingdom", "USA"="United States","Ivory Coast"="Côte d'Ivoire")
     cc$NAME[match(mappings, cc$NAME)] <- names(mappings)
     wm <- left_join(wm, cc[,c("NAME","MYCONTINENTS", "sales")], by=c("region"="NAME"))
     
@@ -182,8 +184,7 @@ server <- function(input, output,session) {
     games_long<-gather(games_y1,Region,TotalSales,EU_Sales:Other_Sales)
     
     q <- ggplot(games_long,aes(x=Year_of_Release,y=TotalSales,fill=Region))+
-      geom_bar(stat="identity")+
-      theme(axis.text.x = element_text(angle = 90, hjust = 1))
+      geom_bar(stat="identity")
     ggplotly(q)
   })
   
@@ -216,19 +217,35 @@ server <- function(input, output,session) {
     tidy_text <- text %>%
       anti_join(stop_words)
     
+    library(tm)
+    text <- toString(tidy_text)
+    docs <- Corpus(VectorSource(text))
+    toSpace <- content_transformer(function (x , pattern ) gsub(pattern, " ", x))
+    docs <- tm_map(docs, toSpace, "/")
+    docs <- tm_map(docs, toSpace, "@")
+    docs <- tm_map(docs, toSpace, "\\|")
+    docs <- tm_map(docs, removeNumbers)
+    docs <- tm_map(docs, removePunctuation)
+    docs <- tm_map(docs, stripWhitespace)
+    dtm <- TermDocumentMatrix(docs)
+    m <- as.matrix(dtm)
+    v <- sort(rowSums(m),decreasing=TRUE)
+    d <- data.frame(word = names(v),freq=v)
+    head(d, 10)
+    
     library(wordcloud)
-    tidy_text%>%
-      count(word) %>%
-      with(wordcloud(word, n, min.freq = input$freq,max.words = input$max,colors=brewer.pal(8, "Dark2")))
+    wordcloud(words = d$word, freq = d$freq, min.freq = input$freq,
+              max.words = input$max, random.order=FALSE, rot.per=0.35,
+              colors=brewer.pal(8, "Dark2"))
   })
   
   #Tab 5 Top 10 Games
   output$table1 <- renderTable({
     toptable <- mydata %>%
-      select(Name,Global_Sales,Year_of_Release) %>%
+      select(Name,Global_Sales,Year_of_Release,Platform) %>%
       filter(Year_of_Release==input$selectyear3) %>%
       arrange(desc(Global_Sales)) %>%
-      distinct(Name,Global_Sales) %>%
+      select(Name,Platform,Global_Sales)%>%      
       head(10)
   },digits = 2)
   

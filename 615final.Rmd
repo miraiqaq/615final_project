@@ -10,13 +10,19 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+#Introduction
+
+Video gaming has a long history as far back as the early 1950s but it did not reach mainstream popularity until the 1970s and 1980s. Video games are a billion-dollar business and have been for many years. In 2016, the video game market in the United States was valued at 17.68 billion U.S. dollars. 
+
+The purpose of this project is to demonstrate what I have learned and my ability to extend knowledge as apply R in new situations - which is explore the development of the video game industry from 1983-2016.
+
 #Read and Clean Data
 ```{r,warning=FALSE,message=FALSE,echo=FALSE}
 library(dplyr)
 library(ggplot2)
 library(tidyverse)
 library(tidyr)
-setwd("/Users/CindyWang/Desktop/615/final_project")
+setwd("/Users/CindyWang/Desktop/615/final_project/615final_project")
 rawdata <- read.csv("video_game_sales.csv")
 mydata <- rawdata
 
@@ -26,13 +32,17 @@ mydata <- filter(mydata, Name!="")
 
 #Remove game released after 2017 and NA
 mydata$Year_of_Release <- as.numeric(as.character(mydata$Year_of_Release))
-mydata <- filter(mydata,Year_of_Release<2017)
+mydata <- filter(mydata,Year_of_Release<2017,Year_of_Release>1982)
+glimpse(mydata)
 ```
 
+First step is to read and clean data. I removed all observations that do not have game names and released after 2016 since the dataset is from web scrape of VGChartz in late 2016.
 
 #EDA
 
-##1.Games Released Each Year by All Publishers(1980-2016)
+The next important part is data visualization. In this project, I will focus on publishers, game sales by region, platform, and genre. 
+
+##1.Games Released Each Year by All Publishers
 ```{r,echo=FALSE}
 mydata  %>%
   group_by(Year_of_Release)  %>%
@@ -41,10 +51,12 @@ mydata  %>%
 ggplot(games_by_year) +
   geom_point(mapping = aes(x=Year_of_Release, y=num_of_games),stat = 'identity') +
   geom_line(mapping = aes(x=Year_of_Release, y=num_of_games),stat = 'identity') + 
-  labs(x = "Year", y = "Number of Games")
+  labs(x = "Year", y = "Number of Games",title="Fig 1.Game Released Each Year by all Publishers")
 ```
 
-##2.top 10 publishers with higher revenue from 1980-2016
+We can see from Fig 1 that there are a lot of video games released during 2005-2008, which means the competition became intense in the late 2000s. 
+
+##2.top 10 publishers with higher revenue 
 ```{r,echo=FALSE}
 sales_per_publisher <- mydata %>%
   group_by(Publisher) %>%
@@ -54,12 +66,14 @@ top10<- sales_per_publisher[1:10,]
 
 ggplot(top10) + 
   geom_bar(aes(x = reorder(Publisher,ttl_sales),y = ttl_sales, fill = Publisher),stat = "identity")  +
-  labs(x = "Publishers", y = "Total Global Sales(millions)") + 
+  labs(x = "Publishers", y = "Total Global Sales(millions)",title="Fig 2.Top 10 Publishers with Higher Revenue ") + 
   theme(legend.position="none") +
   coord_flip() 
 ```
 
-##3.Sales per region in timeline
+Fig 2 shows that form 1983 to 2016, Nintendo is the publisher who get highest revenue and follows by Electronic Arts and Activision. Surprisingly that Sony Computer Entertainment not reached half of Nintendo's total revenue, by looking into the whole publishers name I found that is more likely because Sony Company has a lot of branches such as "Sony Online Entertainment","Sony Music Entertainment",etc.
+
+##3.Sales per region
 ```{r,warning=FALSE,message=FALSE,echo=FALSE}
 aggr_coun <- mydata%>% 
   select(Year_of_Release, Genre, NA_Sales:Global_Sales) %>% 
@@ -78,14 +92,15 @@ aggr_year <- aggr_tab %>%
 
 ggplot(data=aggr_year)+ 
   geom_line(aes(x=Year_of_Release,y=Sales,color=Region))+
-  labs(y = "Sales", x = "Year of release")+
+  labs(y = "Sales", x = "Year of release",title="Fig 3.Sales per region")+
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
   
 ```
 
+Fig 3 shows the sales trend for different regions from 1983 to 2016. It's clear that North America had the most drastic spike in the late 2000s.
 
 ##4.global sales map by platform and year
-```{r,echo=FALSE}
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
 byPlatform <- mydata[,c("Year_of_Release","Platform","NA_Sales","EU_Sales","JP_Sales","Other_Sales")]
 platform_count <- byPlatform %>%
   group_by(Year_of_Release,Platform) %>%
@@ -98,7 +113,7 @@ ex_map_data <- new %>%
   filter(Year_of_Release==2016,Platform=="3DS")
 
 library(tmap)
-data(World)
+# data(World)
 wm <- map_data("world")
 cc <- raster::ccodes()
 mappings <- c("North America"="NA_Sales", "Europe"="EU_Sales") # you add the others here
@@ -108,16 +123,16 @@ cc$MYCONTINENTS <- ifelse(is.na(cc$MYCONTINENTS),"Other_Sales",cc$MYCONTINENTS)
 cc <- left_join(cc, ex_map_data, by = c("MYCONTINENTS"="area"))
 
 ## 31 country names need to be mapped... 
-wm$region %>% 
-  unique %>% 
-  setdiff(cc$NAME)
+# wm$region %>% 
+#   unique %>% 
+#   setdiff(cc$NAME)
 # ...                        
 # [7] "Canary Islands"  "UK"  "Heard Island"     
 # ...
 ## For example, UK is called United Kingdom in cc:
-unique(grep("Kingdom", cc$NAME, value=T, ignore.case=T))
+# unique(grep("Kingdom", cc$NAME, value=T, ignore.case=T))
 # [1] "United Kingdom"
-mappings <- c("UK"="United Kingdom", "USA"="United States") # You add the others here
+mappings <- c("UK"="United Kingdom", "USA"="United States","Ivory Coast"="Côte d'Ivoire") # You add the others here
 cc$NAME[match(mappings, cc$NAME)] <- names(mappings)
 
 wm <- left_join(wm, cc[,c("NAME","MYCONTINENTS", "sales")], by=c("region"="NAME"))
@@ -125,9 +140,11 @@ p <- ggplot() +
   geom_polygon(aes(x=long, y=lat, group=group, fill=sales), wm, colour = NA) +
   coord_quickmap() +
   scale_fill_gradient(low="light blue", high="red") +
-  theme_void()
+  theme_void() +
+  labs(title="Fig 4.global sales map by platform and year")
 library(plotly)
-ggplotly(p)
+# ggplotly(p)
+p
 
 
 # ## Download data from Natural Earth
@@ -168,8 +185,10 @@ ggplotly(p)
 #   fillOpacity = 0.5) 
 ```
 
+Fig 4 is a global heat map to visualize sales revenue by platform and year. I take Platform="3DS" and Year_of_Release="2016" as example. As we can see, Japan had highest sales revenue for 3DS video games in 2016. Users could also adjust Platform and Year of Release in Shiny App. 
+
 ##5.game name text analysis (word cloud)
-```{r,echo=FALSE}
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
 ##Take Year_of_Release="2016" as example
 library(tidytext)
 library(dplyr)
@@ -182,18 +201,46 @@ data(stop_words)
 tidy_text <- text %>%
   anti_join(stop_words)
 
-# library(tm)
-# mycorpus <- Corpus(VectorSource(tidy_text))
-# mycorpus <- tm_map(mycorpus, removeNumbers)  
-# 
-# df <- data.frame(text = get("content", mycorpus))
+library(tm)
+text <- toString(tidy_text)
+docs <- Corpus(VectorSource(text))
+toSpace <- content_transformer(function (x , pattern ) gsub(pattern, " ", x))
+docs <- tm_map(docs, toSpace, "/")
+docs <- tm_map(docs, toSpace, "@")
+docs <- tm_map(docs, toSpace, "\\|")
+docs <- tm_map(docs, removeNumbers)
+# Remove punctuations
+docs <- tm_map(docs, removePunctuation)
+# Eliminate extra white spaces
+docs <- tm_map(docs, stripWhitespace)
+dtm <- TermDocumentMatrix(docs)
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+# head(d, 10)
 
 library(wordcloud)
-tidy_text%>%
-  count(word) %>%
-  with(wordcloud(word, n, min.freq = 1,max.words = 100,colors=brewer.pal(8, "Dark2")))
+layout(matrix(c(1, 2), nrow=2), heights=c(1, 4))
+par(mar=rep(0, 4))
+plot.new()
+text(x=0.5, y=0.5, "Fig 5. Word Cloud")
+set.seed(321)
+wordcloud(words = d$word, freq = d$freq, min.freq = 1,
+          max.words=100, random.order=FALSE, rot.per=0.35,
+          colors=brewer.pal(8, "Dark2"))
 
+
+# layout(matrix(c(1, 2), nrow=2), heights=c(1, 4))
+# par(mar=rep(0, 4))
+# plot.new()
+# text(x=0.5, y=0.5, "Fig 5. Word Cloud")
+# tidy_text%>%
+#   count(word) %>%
+#   with(wordcloud(word, n, min.freq = 1,max.words = 100,random.order=FALSE, 
+#                  rot.per=0.35,main="Title",colors=brewer.pal(8, "Dark2")))
 ```
+
+Fig 5 is a word cloud allows us to highlight the most frequently used keywords in texts. The above word cloud clearly shows that “collection”, “lego”, “wars”, “pro” and “evil” are the five most important words in game names which released 2016.
 
 ##6.Sales by Genre
 ```{r,echo=FALSE}
@@ -207,9 +254,11 @@ games_long<-gather(games_y1,Region,TotalSales,EU_Sales:Other_Sales)
 
 q <- ggplot(games_long,aes(x=Year_of_Release,y=TotalSales,fill=Region))+
   geom_bar(stat="identity")+
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  labs(title="Fig 6.Sales by Genre")
 ggplotly(q)
 ```
+
+Fig 6 shows the distribution of sales by genre. It is clear that North America always contributes most of sales, however in 2015 and 2016, it seems all four regions had equal sales amount.
 
 ##7.Pie chart of genres in certain year and platform
 ```{r,echo=FALSE}
@@ -220,24 +269,15 @@ genre_count <- mydata %>%
   group_by(Genre) %>%
   summarise(count=n())
 
-genre_pie <- plot_ly(genre_count, labels = ~Genre, values = ~count, type = 'pie',textposition = 'inside',textinfo = 'percent+label')
+genre_pie <- plot_ly(genre_count, labels = ~Genre, values = ~count, type = 'pie',
+                     textposition = 'inside',textinfo = 'percent+label') %>%
+  layout(title="Fig 7.Pie chart of genres")
 
 ggplotly(genre_pie)
 ```
 
-#Benford Law
-```{r}
-library(benford.analysis)
-bfd <- benford(mydata$Global_Sales)
-plot(bfd)
+Fig 7 is pie chart of genres in certain year and platform. I took Platform="3DS" and Year_of_Release="2016" as example, it shows us Action is the largest portion. Same as the global sales map above(Fig 1), Platform and Year of Release are also adjustable in Shiny App. 
 
-
-library(BenfordTests)
-# Euclidean Distance Test for Benford’s Law
-edist.benftest(mydata$Global_Sales)
-# The p-value is smaller than 0.05 so that we reject the null hypothesis. Therefore, the goodness-of-fit test based on the Euclidean distance between the first digits' distribution and Benford's distribution shows the data does not conform to Benford's law very well.
-
-```
 
 #Top 10 Games
 ```{r}
@@ -245,11 +285,28 @@ edist.benftest(mydata$Global_Sales)
 toptable <- mydata %>%
   select(Name,Global_Sales,Year_of_Release,Platform) %>%
   filter(Year_of_Release==2016) %>%
-  arrange(desc(Global_Sales)) %>%
-  distinct(Name,Global_Sales) %>%
+  arrange(desc(Global_Sales))%>%
+  select(Name,Platform,Global_Sales)%>%
   head(10)
-
+toptable
 ```
+
+I also made a table to show users that most popular games in a certain year, here is an example when "2016" is selected. 
+
+#Benford Law
+```{r}
+library(benford.analysis)
+bfd <- benford(mydata$Global_Sales)
+plot(bfd)
+
+library(BenfordTests)
+# Euclidean Distance Test for Benford’s Law
+edist.benftest(mydata$Global_Sales)
+```
+
+The p-value is smaller than 0.05 so that we reject the null hypothesis. Therefore, the goodness-of-fit test based on the Euclidean distance between the first digits' distribution and Benford's distribution shows the data does not conform to Benford's law very well.
+
+
 
 
 
